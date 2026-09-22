@@ -60,6 +60,15 @@ SELECT *, round(100 * (ventas / lag(ventas) OVER (ORDER BY mes) - 1), 1) AS var_
 FROM mensual
 ORDER BY mes;
 
+-- 2b. DIAS PICO
+-- Explica el salto de nov-2017: si los dias con mas pedidos coinciden con Black Friday
+-- (24-nov-2017), el crecimiento de ese mes es estacional y no organico.
+SELECT purchase_ts::DATE AS dia, count(DISTINCT order_id) AS pedidos
+FROM sales
+GROUP BY 1
+ORDER BY pedidos DESC
+LIMIT 5;
+
 -- 3. LOS 3 PRODUCTOS MENOS VENDIDOS
 -- LEFT JOIN desde products para no perder los que nunca se vendieron (COALESCE a 0).
 -- La ultima columna dimensiona la cola larga: cuantos productos comparten ese piso de 0-1 unidades.
