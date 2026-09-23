@@ -20,9 +20,10 @@ WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'capstone_project')\ge
 \c capstone_project
 
 -- 1. STAGING: todo TEXT, porque los CSV traen celdas vacias en fechas y
--- categorias y un COPY directo a columnas tipadas no permitiria auditarlas.
+-- categorias y un COPY directo a columnas tipadas no permitiria auditarlas
 
--- CASCADE: la vista sales (analisis.sql) depende de estas tablas y bloquearia el DROP al re-ejecutar.
+-- CASCADE: la vista sales (analisis.sql) depende de estas tablas y bloquearia el DROP al re-ejecutar
+
 DROP TABLE IF EXISTS order_items, orders, products, customers CASCADE;
 
 CREATE TEMP TABLE customers_raw (customer_id TEXT, customer_unique_id TEXT, zip TEXT, city TEXT, state TEXT);
@@ -37,7 +38,7 @@ CREATE TEMP TABLE items_raw (order_id TEXT, order_item_id TEXT, product_id TEXT,
 \copy orders_raw FROM 'data/olist_orders_dataset.csv' WITH (FORMAT csv, HEADER)
 \copy items_raw FROM 'data/olist_order_items_dataset.csv' WITH (FORMAT csv, HEADER)
 
--- 2. DIAGNOSTICO: nulos en columnas criticas antes de decidir como tratarlos.
+-- 2. DIAGNOSTICO: nulos en columnas criticas antes de decidir como tratarlos
 
 SELECT (SELECT count(*) FROM products_raw WHERE category IS NULL) AS productos_sin_categoria,
        (SELECT count(*) FROM orders_raw WHERE purchase IS NULL) AS pedidos_sin_fecha_compra,
@@ -45,7 +46,7 @@ SELECT (SELECT count(*) FROM products_raw WHERE category IS NULL) AS productos_s
        (SELECT count(*) FROM items_raw WHERE price IS NULL) AS items_sin_precio,
        (SELECT count(*) FROM items_raw WHERE freight IS NULL) AS items_sin_flete;
 
--- 3. TABLAS FINALES. Dinero en NUMERIC (FLOAT arrastra error de redondeo).
+-- 3. TABLAS FINALES. Dinero en NUMERIC (FLOAT arrastra error de redondeo)
 
 CREATE TABLE customers (
     customer_id        CHAR(32) PRIMARY KEY,   -- Olist genera uno por pedido
@@ -83,35 +84,33 @@ INSERT INTO customers
 SELECT customer_id, customer_unique_id, initcap(btrim(city)), upper(state)
 FROM customers_raw;
 
--- Categoria: traduccion al ingles, si no existe el nombre original, y si el
--- producto no trae ninguna, una etiqueta explicita. Un NULL desapareceria en
--- silencio de los GROUP BY y subestimaria las ventas.
+-- Categoria: traduccion al ingles, si no existe el nombre original, y si el producto no trae ninguna, una etiqueta explicita
+-- Un NULL desapareceria en silencio de los GROUP BY y subestimaria las ventas
 
 INSERT INTO products
 SELECT p.product_id, COALESCE(c.category_en, p.category, 'sin_categoria')
 FROM products_raw p
 LEFT JOIN categories_raw c USING (category);
 
--- delivered_ts NO se imputa: sin fecha de entrega el pedido no llego al cliente
--- (en transito, cancelado, sin stock); inventarle una fecha falsearia los plazos.
+-- Delivered_ts NO se imputa, sin fecha de entrega el pedido no llego al cliente (en transito, cancelado, sin stock), inventarle una fecha falsearia los plazos
 
 INSERT INTO orders
 SELECT order_id, customer_id, status, purchase::TIMESTAMP, delivered::TIMESTAMP, estimated::DATE
 FROM orders_raw;
 
--- Flete ausente = envio sin costo, por eso 0. El precio no se imputa: sin
--- precio la linea no es una venta medible y el CHECK la rechaza.
+-- Flete ausente = envio sin costo, por eso 0
 
 INSERT INTO order_items
 SELECT order_id, order_item_id::SMALLINT, product_id, price::NUMERIC, COALESCE(freight::NUMERIC, 0)
 FROM items_raw;
 
--- Indices solo en las FK usadas en los JOIN; las PK ya tienen el suyo.
+-- Indices solo en las FK usadas en los JOIN, las PK ya tienen el suyo
 
 CREATE INDEX ON orders (customer_id);
 CREATE INDEX ON order_items (product_id);
 
--- 5. CONTROL: lo cargado debe coincidir con los CSV.
+-- 5. CONTROL: lo cargado debe coincidir con los CSV
+
 SELECT (SELECT count(*) FROM customers) AS customers,
        (SELECT count(*) FROM products) AS products,
        (SELECT count(*) FROM orders) AS orders,
